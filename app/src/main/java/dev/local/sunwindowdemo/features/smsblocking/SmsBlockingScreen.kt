@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -33,6 +34,7 @@ import java.util.Date
 
 private data class SimEntry(val slot: Int, val name: String, val subscriptionId: Int)
 private data class RuleEdit(val slot: Int, val index: Int?, val value: String, val keyword: Boolean)
+private data class RecordView(val sender: String, val sim: String, val reason: String, val time: String, val body: String)
 
 @Suppress("MissingPermission")
 private fun activeSims(context: Context): List<SimEntry> {
@@ -55,6 +57,7 @@ fun SmsBlockingScreen(showRecords: Boolean = false, bottomInset: Dp = 0.dp, onRe
     var ruleEdit by remember { mutableStateOf<RuleEdit?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmAll by remember { mutableStateOf<Int?>(null) }
+    var viewing by remember { mutableStateOf<RecordView?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
     fun refresh() {
         config = SmsBlockingStore.readConfig(context)
@@ -108,8 +111,10 @@ fun SmsBlockingScreen(showRecords: Boolean = false, bottomInset: Dp = 0.dp, onRe
         if (showRecords) {
             if (records.isEmpty()) Hint("暂无拦截记录") else {
                 TextButton(onClick = { confirmClear = true }) { Text("清空记录") }
+                Hint("记录只保存在本机，最多 200 条，含短信原文（最多 700 字）。点击任意一条可查看全文。")
                 SettingsGroup {
                     records.forEach { item ->
+                        val sender = item.getString("sender").orEmpty().ifBlank { "未知发送方" }
                         val sim = item.getString("sim_label").orEmpty().ifBlank { "SIM ${item.getInt("slot_index") + 1}" }
                         val reason = when (item.getString("reason")) {
                             "all_sms" -> "拦截该卡全部短信"
@@ -118,8 +123,10 @@ fun SmsBlockingScreen(showRecords: Boolean = false, bottomInset: Dp = 0.dp, onRe
                             "keyword" -> "命中关键词 ${item.getString("matched_pattern").orEmpty()}"
                             else -> item.getString("reason").orEmpty()
                         }
-                        SettingRow(item.getString("sender").orEmpty().ifBlank { "未知发送方" },
-                            "$sim · $reason\n${DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(item.getLong("time")))}")
+                        val time = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(item.getLong("time")))
+                        SettingRow(sender, "$sim · $reason\n$time", onClick = {
+                            viewing = RecordView(sender, sim, reason, time, item.getString("body").orEmpty())
+                        })
                     }
                 }
             }
@@ -239,6 +246,25 @@ fun SmsBlockingScreen(showRecords: Boolean = false, bottomInset: Dp = 0.dp, onRe
                 }) { Text("拦截全部") }
             },
             dismissButton = { TextButton(onClick = { confirmAll = null }) { Text("取消") } })
+    }
+    viewing?.let { record ->
+        AlertDialog(
+            onDismissRequest = { viewing = null },
+            title = { Text(record.sender) },
+            text = {
+                Column(Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    Text("${record.sim} · ${record.reason}", style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary)
+                    Text(record.time, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(12.dp))
+                    SelectionContainer {
+                        Text(record.body.ifBlank { "（未记录到正文，可能是纯数据短信）" }, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { viewing = null }) { Text("关闭") } },
+        )
     }
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("清空拦截记录？") },
         confirmButton = { TextButton(onClick = { SmsBlockingStore.clearRecords(context); confirmClear = false }) { Text("清空") } },

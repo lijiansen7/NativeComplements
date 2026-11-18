@@ -34,6 +34,8 @@ public final class SmsBlockingModule extends XposedModule {
     private final ThreadLocal<Boolean> consulted = new ThreadLocal<>();
     /** Multi-part segments share one reference number; one message stays one decision and one record. */
     private final Map<String, String> decided = new LinkedHashMap<>();
+    /** Each segment is only visible in its own call, so the record needs the accumulated text. */
+    private final Map<String, StringBuilder> bodies = new LinkedHashMap<>();
     private Method trackerAddress, trackerPdu, trackerFormat, trackerSubId, trackerCount, trackerReference;
     private Field handlerContext;
     private HostSnapshot snapshot;
@@ -155,6 +157,8 @@ public final class SmsBlockingModule extends XposedModule {
             if (info == null) return null;
             int slot = info.getSimSlotIndex();
             if (slot < 0 || slot > 1) return null;
+            String text = body(tracker);
+            if (key != null) rememberBody(key, text);
             String remembered = key == null ? null : remembered(key);
             String reason, pattern = "";
             if (remembered != null) {
@@ -162,12 +166,11 @@ public final class SmsBlockingModule extends XposedModule {
                 reason = split < 0 ? remembered : remembered.substring(0, split);
                 pattern = split < 0 ? "" : remembered.substring(split + 1);
             } else {
-                String body = body(tracker);
                 SmsBlockingRules.Decision explicit = SmsBlockingRules.decide(true, slot,
                         state.getBoolean("sim1_reject_all"), state.getStringArray("sim1_patterns"),
                         state.getStringArray("sim1_keywords"), state.getBoolean("sim2_follow_sim1"),
                         state.getBoolean("sim2_reject_all"), state.getStringArray("sim2_patterns"),
-                        state.getStringArray("sim2_keywords"), address, body);
+                        state.getStringArray("sim2_keywords"), address, text);
                 String prefix = slot == 0 || state.getBoolean("sim2_follow_sim1") ? "sim1_" : "sim2_";
                 SmsBlockingRules.Decision verdict = explicit;
                 if (!verdict.blocked && state.getBoolean(prefix + "reject_strangers")) {
@@ -178,7 +181,7 @@ public final class SmsBlockingModule extends XposedModule {
                     verdict = SmsBlockingRules.stranger(explicit, true, ready,
                             ready && book.numbers.contains(SmsBlockingRules.normalizeSender(address)),
                             state.getBoolean(prefix + "allow_verification"),
-                            SmsBlockingRules.looksLikeVerification(body), address);
+                            SmsBlockingRules.looksLikeVerification(text), address);
                 }
                 reason = verdict.blocked ? verdict.reason : null;
                 pattern = verdict.matchedPattern;
@@ -194,6 +197,7 @@ public final class SmsBlockingModule extends XposedModule {
             entry.putString("sim_label", String.valueOf(info.getDisplayName()));
             entry.putString("reason", reason);
             entry.putString("matched_pattern", pattern);
+            entry.putString("body", key == null ? text : rememberedBody(key));
             return new Blocked(entry);
         } finally { Binder.restoreCallingIdentity(identity); }
     }
@@ -209,6 +213,28 @@ public final class SmsBlockingModule extends XposedModule {
             String text = message.getMessageBody();
             return text == null ? "" : text;
         } catch (Throwable e) { return ""; }
+    }
+
+    /** Bounded per-reference text so a multi-part message keeps its original words. */
+    private void rememberBody(String key, String text) {
+        if (text == null || text.isEmpty()) return;
+        synchronized (bodies) {
+            StringBuilder buffer = bodies.get(key);
+            if (buffer == null) {
+                buffer = new StringBuilder();
+                bodies.put(key, buffer);
+                if (bodies.size() > 16) bodies.remove(bodies.keySet().iterator().next());
+            }
+            int room = 700 - buffer.length();
+            if (room > 0) buffer.append(text, 0, Math.min(room, text.length()));
+        }
+    }
+
+    private String rememberedBody(String key) {
+        synchronized (bodies) {
+            StringBuilder buffer = bodies.get(key);
+            return buffer == null ? "" : buffer.toString();
+        }
     }
 
     private String remembered(String key) {

@@ -8,7 +8,7 @@
 - 静态作用域为 `system`、`com.android.systemui`、`com.google.android.apps.nexuslauncher`、`com.android.launcher3`、`com.android.phone`（仅短信拦截使用，旧安装需在 LSPosed 补勾，未勾选时该功能不生效）。桌面只信任已知系统实际 HOME 及本用户真实 UID；包存在或 ROM 名称不授予权限。
 - 宿主接入遵循“平台事件输入 → 共用规则／状态 → 平台执行与恢复”。相同 Hook 共用，真正不同的 ABI／安装时机放入对应功能的局部 Access／Targets，不复制整套功能或创建通用 ROM 插件平台。
 - 保留 UID、user、display、锁屏、认证、nonce、租约、任务所有权及失败恢复边界。Hook 预检／安装失败保持原生，未知不冒充不支持；安装成功不是设备效果验收。
-- 短信拦截位于 features/smsblocking，只在 `com.android.phone` 主进程安装：`InboundSmsHandler.processMessagePart(InboundSmsTracker)` 只取卡槽／发送方／本段正文，`BlockChecker.getBlockStatus` 在同一线程返回原生屏蔽状态，删除 raw 行与抑制 `SMS_DELIVER` 全部交给原生路径，不写 Telephony 库、不改默认短信应用；多段按 reference number 记忆判定，记录只存发送方／卡槽／原因，Provider 仅自身、1000 与按包名解析的电话 UID。
+- 短信拦截位于 features/smsblocking，只在 `com.android.phone` 主进程安装：`InboundSmsHandler.processMessagePart(InboundSmsTracker)` 只取卡槽／发送方／本段正文，`BlockChecker.getBlockStatus` 在同一线程返回原生屏蔽状态，删除 raw 行与抑制 `SMS_DELIVER` 全部交给原生路径，不写 Telephony 库、不改默认短信应用；多段按 reference number 记忆判定与正文，记录 200 条含发送方／卡槽／原因与有界正文（700 字符，仅设备保护存储、可清空，日志仍不出现正文）；Provider 仅自身、1000 与按包名解析的电话 UID。
 - 社区署名仅用于首次一次维护者提示及关于页；无已确认维护者反馈地址时回主项目。不增加逐功能“未适配／未验证”提示，不要求贡献者补测试模板或报告。见[社区协作](<docs/community-adaptation-plan.md>)。
 - 当前运行合同见[接入索引](<docs/adaptation/README.md>)。旧独立小窗产品已退役，但旧身份、防双接管和恢复迁回兼容不可随资料清理删除；不恢复长侧滑、无障碍按钮或已退役的窗口／遮罩莫奈入口。
 

@@ -56,8 +56,11 @@ assert 'catch(RuntimeException unavailable){return Bundle.EMPTY;}' in provider
 assert 'phone(uid)' in provider
 assert 'p.getBoolean(key(slot, "reject_strangers"), false)' in store
 assert 'p.getBoolean(key(slot, "allow_verification"), false)' in store
-# Message bodies must never be persisted or logged.
-assert 'first.put("sender"' in store and 'body' not in store.split('recordBlocked', 1)[1]
+# Records may show the original text, but bounded and never in logs.
+assert 'first.put("sender"' in store and 'first.put("body", bounded(value, "body", 700))' in store
+note = module.split("private void note(", 1)[1]
+assert "body" not in note, "Body must not reach the module log"
+assert 'bodies.size() > 16' in module and '"body", key == null ? text : rememberedBody(key)' in module
 assert 'matched_pattern' in store and 'bounded(value, "matched_pattern", 64)' in store
 assert 'looksLikeVerification' in rules and 'VERIFICATION_CODE' in rules
 assert 'SmsBlockingScreen' in screen and 'confirmAll' in screen
